@@ -40,7 +40,7 @@ jobs:
     - name: Rust Cache
       uses: swatinem/rust-cache@v2
       with:
-        workspaces: "./src-tauri -> target"
+        workspaces: ". -> target"
         
     - name: Run tests
       run: cargo test
@@ -89,7 +89,7 @@ jobs:
     - name: Rust Cache
       uses: swatinem/rust-cache@v2
       with:
-        workspaces: "./src-tauri -> target"
+        workspaces: ". -> target"
         key: ${{ matrix.platform }}
 
     - name: Sync node version and setup cache
@@ -98,8 +98,8 @@ jobs:
         node-version: 'lts/*'
         cache: 'npm'
 
-    - name: Install frontend dependencies
-      run: npm ci
+    - name: Install Tauri CLI
+      run: npm install -g @tauri-apps/cli
 
     - name: Build the app
       uses: tauri-apps/tauri-action@v0
@@ -143,8 +143,8 @@ jobs:
       with:
         name: swingmusic-desktop-${{ matrix.platform }}
         path: |
-          src-tauri/target/${{ matrix.rust_target }}/release/bundle/
-          !src-tauri/target/${{ matrix.rust_target }}/release/bundle/.*/
+          target/${{ matrix.rust_target }}/release/bundle/
+          !target/${{ matrix.rust_target }}/release/bundle/.*/
         retention-days: 30
 
   create-release:

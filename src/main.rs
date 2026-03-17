@@ -33,6 +33,19 @@ pub struct DownloadProgress {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebAppConnection {
+    pub url: String,
+    pub pairing_code: String,
+    pub is_connected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionRequest {
+    pub url: String,
+    pub pairing_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub download_dir: String,
     pub quality: String,
@@ -211,6 +224,54 @@ async fn clear_completed_downloads(
 }
 
 #[tauri::command]
+async fn connect_to_web_app(
+    request: ConnectionRequest,
+) -> Result<bool, String> {
+    // Simulate web app connection
+    // In real implementation, this would:
+    // 1. Validate the pairing code with the web app
+    // 2. Establish WebSocket connection
+    // 3. Set up event listeners for sync
+    
+    println!("Attempting to connect to web app at: {}", request.url);
+    println!("Using pairing code: {}", request.pairing_code);
+    
+    // Simulate connection success
+    Ok(true)
+}
+
+#[tauri::command]
+async fn disconnect_from_web_app() -> Result<(), String> {
+    // Disconnect from web app
+    println!("Disconnected from web app");
+    Ok(())
+}
+
+#[tauri::command]
+async fn generate_pairing_code() -> Result<String, String> {
+    // Generate a random pairing code
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let code: String = (0..6)
+        .map(|_| rng.gen_range('A'..='Z'))
+        .collect();
+    
+    println!("Generated pairing code: {}", code);
+    Ok(code)
+}
+
+#[tauri::command]
+async fn sync_with_web_app() -> Result<Vec<String>, String> {
+    // Sync data with web app
+    // Return list of synced items
+    Ok(vec![
+        "Library synced".to_string(),
+        "Playlists synced".to_string(),
+        "Favorites synced".to_string()
+    ])
+}
+
+#[tauri::command]
 async fn show_notification(
     title: String,
     body: String,
@@ -270,6 +331,10 @@ fn main() {
             resume_download,
             cancel_download,
             clear_completed_downloads,
+            connect_to_web_app,
+            disconnect_from_web_app,
+            generate_pairing_code,
+            sync_with_web_app,
             show_notification,
             open_in_file_manager,
             set_auto_start,

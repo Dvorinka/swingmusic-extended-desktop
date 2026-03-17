@@ -45,12 +45,27 @@
         
         <!-- Quick Actions -->
         <div class="quick-actions" v-if="!sidebarCollapsed">
-          <button @click="openUniversalDownloader" class="quick-action primary">
-            <Download /> Quick Download
-          </button>
-          <button @click="openSettings" class="quick-action secondary">
-            <Settings /> Settings
-          </button>
+          <div class="quick-action-card">
+            <button @click="openWebAppConnection" class="quick-action primary" :class="{ connected: isWebAppConnected }">
+              <Cloud /> {{ isWebAppConnected ? 'Connected' : 'Connect Web App' }}
+            </button>
+            <div class="connection-status" v-if="isWebAppConnected">
+              <div class="status-indicator connected"></div>
+              <span>Syncing with {{ webAppUrl }}</span>
+            </div>
+          </div>
+          
+          <div class="quick-action-card">
+            <button @click="openUniversalDownloader" class="quick-action secondary">
+              <Download /> Quick Download
+            </button>
+          </div>
+          
+          <div class="quick-action-card">
+            <button @click="openSettings" class="quick-action secondary">
+              <Settings /> Settings
+            </button>
+          </div>
         </div>
       </div>
       
@@ -60,6 +75,11 @@
         <header class="app-header">
           <div class="header-left">
             <h1 class="page-title">{{ currentPageTitle }}</h1>
+            <div class="breadcrumb">
+              <span class="breadcrumb-item">Home</span>
+              <span class="breadcrumb-separator">/</span>
+              <span class="breadcrumb-item active">{{ currentPageTitle }}</span>
+            </div>
           </div>
           <div class="header-right">
             <div class="search-bar">
@@ -69,6 +89,7 @@
                 @input="handleSearch"
                 placeholder="Search tracks, artists, albums..."
                 type="text"
+                class="search-input"
               />
             </div>
             <div class="user-controls">
@@ -88,13 +109,22 @@
         
         <!-- Page Content -->
         <main class="page-content">
-          <component :is="currentPageComponent" />
+          <div class="content-wrapper">
+            <component :is="currentPageComponent" />
+          </div>
         </main>
         
         <!-- Mini Player -->
         <div class="mini-player" v-if="currentTrack">
           <div class="track-info">
-            <img :src="currentTrack.cover" class="track-cover" />
+            <div class="track-cover-wrapper">
+              <img :src="currentTrack.cover" class="track-cover" />
+              <div class="playing-indicator" v-if="isPlaying">
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+              </div>
+            </div>
             <div class="track-details">
               <h4 class="track-title">{{ currentTrack.title }}</h4>
               <p class="track-artist">{{ currentTrack.artist }}</p>
@@ -112,8 +142,14 @@
               <SkipForward />
             </button>
           </div>
-          <div class="progress-bar">
-            <div class="progress-fill" :style="{ width: playbackProgress + '%' }"></div>
+          <div class="progress-section">
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{ width: playbackProgress + '%' }"></div>
+            </div>
+            <div class="time-info">
+              <span class="current-time">2:34</span>
+              <span class="total-time">4:21</span>
+            </div>
           </div>
           <div class="volume-control">
             <Volume2 />
@@ -125,10 +161,20 @@
               max="100" 
               class="volume-slider"
             />
+            <span class="volume-value">{{ volume }}%</span>
           </div>
         </div>
       </div>
     </div>
+    
+    <!-- Web App Connection Modal -->
+    <WebAppConnectionModal
+      :isVisible="showConnectionModal"
+      :webAppUrl="webAppUrl"
+      :isConnected="isWebAppConnected"
+      @close="closeConnectionModal"
+      @connection-changed="handleConnectionChange"
+    />
   </div>
 </template>
 
@@ -140,7 +186,7 @@ import { appWindow } from '@tauri-apps/api/window'
 
 // Reactive state
 const sidebarCollapsed = ref(false)
-const currentRoute = ref('library')
+const currentRoute = ref('home')
 const searchQuery = ref('')
 const isDarkMode = ref(true)
 const currentTrack = ref(null)
@@ -148,36 +194,37 @@ const isPlaying = ref(false)
 const playbackProgress = ref(0)
 const volume = ref(75)
 const unreadNotifications = ref(0)
+const isWebAppConnected = ref(false)
+const webAppUrl = ref('http://localhost:6081')
+const pairingCode = ref('')
+const showConnectionModal = ref(false)
 
 // Computed properties
 const currentPageTitle = computed(() => {
   const titles = {
-    library: 'My Library',
+    home: 'Home',
+    library: 'Your Library',
     downloads: 'Downloads',
-    search: 'Search',
-    settings: 'Settings',
-    radio: 'Radio'
+    search: 'Search'
   }
   return titles[currentRoute.value] || 'SwingMusic'
 })
 
 const currentPageComponent = computed(() => {
   const components = {
+    home: 'HomeView',
     library: 'LibraryView',
     downloads: 'DownloadsView',
-    search: 'SearchView',
-    settings: 'SettingsView',
-    radio: 'RadioView'
+    search: 'SearchView'
   }
-  return components[currentRoute.value] || 'LibraryView'
+  return components[currentRoute.value] || 'HomeView'
 })
 
 const navigationItems = ref([
-  { id: 'library', name: 'Library', icon: 'Music', route: 'library' },
-  { id: 'downloads', name: 'Downloads', icon: 'Download', route: 'downloads' },
+  { id: 'home', name: 'Home', icon: 'Home', route: 'home' },
   { id: 'search', name: 'Search', icon: 'Search', route: 'search' },
-  { id: 'radio', name: 'Radio', icon: 'Radio', route: 'radio' },
-  { id: 'settings', name: 'Settings', icon: 'Settings', route: 'settings' }
+  { id: 'library', name: 'Your Library', icon: 'Music', route: 'library' },
+  { id: 'downloads', name: 'Downloads', icon: 'Download', route: 'downloads' }
 ])
 
 // Window controls
@@ -294,6 +341,76 @@ const showNotifications = () => {
 
 const openUniversalDownloader = () => {
   navigateTo('downloads')
+}
+
+const openWebAppConnection = () => {
+  // Open web app connection modal/dialog
+  if (isWebAppConnected.value) {
+    disconnectFromWebApp()
+  } else {
+    connectToWebApp()
+  }
+}
+
+const connectToWebApp = async () => {
+  try {
+    // Generate pairing code
+    pairingCode.value = generatePairingCode()
+    
+    // Show connection dialog with pairing code
+    showConnectionDialog()
+    
+    // Attempt connection to web app
+    const connected = await invoke('connect_to_web_app', { 
+      url: webAppUrl.value,
+      pairingCode: pairingCode.value 
+    })
+    
+    if (connected) {
+      isWebAppConnected.value = true
+      await invoke('show_notification', {
+        title: 'Connected to Web App',
+        body: `Successfully connected to ${webAppUrl.value}`
+      })
+    }
+  } catch (error) {
+    console.error('Failed to connect to web app:', error)
+    await invoke('show_notification', {
+      title: 'Connection Failed',
+      body: 'Could not connect to web app. Please check the URL and try again.'
+    })
+  }
+}
+
+const disconnectFromWebApp = async () => {
+  try {
+    await invoke('disconnect_from_web_app')
+    isWebAppConnected.value = false
+    pairingCode.value = ''
+    
+    await invoke('show_notification', {
+      title: 'Disconnected',
+      body: 'Disconnected from web app'
+    })
+  } catch (error) {
+    console.error('Failed to disconnect from web app:', error)
+  }
+}
+
+const generatePairingCode = () => {
+  return Math.random().toString(36).substring(2, 8).toUpperCase()
+}
+
+const showConnectionDialog = () => {
+  showConnectionModal.value = true
+}
+
+const closeConnectionModal = () => {
+  showConnectionModal.value = false
+}
+
+const handleConnectionChange = (connected: boolean) => {
+  isWebAppConnected.value = connected
 }
 
 const openSettings = () => {
