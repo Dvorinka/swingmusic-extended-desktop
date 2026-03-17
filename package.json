@@ -1,0 +1,15 @@
+{
+  "name": "swingmusic-desktop",
+  "version": "1.0.0",
+  "description": "SwingMusic Desktop Application",
+  "scripts": {
+    "tauri": "tauri",
+    "build": "tauri build",
+    "dev": "tauri dev",
+    "build:debug": "tauri build --debug",
+    "build:release": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.5.0"
+  }
+}
