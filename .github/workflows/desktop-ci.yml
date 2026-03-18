@@ -3,12 +3,8 @@ name: Desktop CI
 on:
   push:
     branches: [ "main" ]
-    paths:
-      - 'swingmusic-desktop/**'
   pull_request:
     branches: [ "main" ]
-    paths:
-      - 'swingmusic-desktop/**'
   workflow_dispatch:
 
 env:
