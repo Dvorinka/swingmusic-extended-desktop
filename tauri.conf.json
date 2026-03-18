@@ -33,7 +33,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "category": "AudioVideo",
+    "category": "Music",
     "shortDescription": "Advanced music player with Universal Source integration",
     "longDescription": "SwingMusic is a powerful desktop music player with advanced features including Universal Source URL downloading, intelligent recommendations, and comprehensive audio management.",
     "icon": [

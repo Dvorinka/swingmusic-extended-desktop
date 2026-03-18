@@ -1,5 +1,4 @@
 // src/native_features.rs
-use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -9,31 +8,20 @@ impl NativeFeatures {
     pub fn show_download_notification(title: &str, body: &str) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(target_os = "windows")]
         {
-            use windows_sys::Win32::UI::Shell::*;
-            use windows_sys::Win32::Foundation::*;
-            
-            unsafe {
-                let result = Shell_NotifyIconW(
-                    NIM_ADD,
-                    &mut NOTIFYICONDATAW {
-                        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
-                        hWnd: GetForegroundWindow(),
-                        uID: 1,
-                        uFlags: NIF_INFO,
-                        szInfo: [0; 256],
-                        dwInfoFlags: NIIF_INFO,
-                        ..Default::default()
-                    }
-                );
-                
-                if result == 0 {
-                    return Err("Failed to show notification".into());
-                }
-            }
+            // Use PowerShell for notifications on Windows
+            let _result = Command::new("powershell")
+                .arg("-Command")
+                .arg(format!(
+                    "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('{}', '{}', 'Information', 'OK')",
+                    body.replace("'", "''"),
+                    title.replace("'", "''")
+                ))
+                .output()?;
         }
         
         #[cfg(target_os = "macos")]
         {
+            use std::fs;
             use std::ffi::CString;
             
             let title_c = CString::new(title)?;
@@ -95,27 +83,33 @@ impl NativeFeatures {
     pub fn set_auto_start(enabled: bool) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(target_os = "windows")]
         {
-            use winreg::enums::*;
-            use winreg::RegKey;
-            
+            // Use PowerShell for auto-start on Windows
             let exe_path = std::env::current_exe()?;
             let app_name = "SwingMusic";
             
-            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            let path = hkcu.open_subkey_with_flags(
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-                KEY_ALL_ACCESS,
-            )?;
-            
             if enabled {
-                path.set_value(app_name, &exe_path.to_string_lossy())?;
+                let _result = Command::new("powershell")
+                    .arg("-Command")
+                    .arg(format!(
+                        "New-ItemProperty -Path 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run' -Name '{}' -Value '{}' -PropertyType String -Force",
+                        app_name,
+                        exe_path.to_string_lossy()
+                    ))
+                    .output()?;
             } else {
-                path.delete_value(app_name)?;
+                let _result = Command::new("powershell")
+                    .arg("-Command")
+                    .arg(format!(
+                        "Remove-ItemProperty -Path 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run' -Name '{}' -ErrorAction SilentlyContinue",
+                        app_name
+                    ))
+                    .output()?;
             }
         }
         
         #[cfg(target_os = "macos")]
         {
+            use std::fs;
             let home_dir = std::env::var("HOME")?;
             let launch_agents_dir = format!("{}/Library/LaunchAgents", home_dir);
             let plist_file = format!("{}/com.swingmusic.plist", launch_agents_dir);
@@ -149,6 +143,7 @@ impl NativeFeatures {
         
         #[cfg(target_os = "linux")]
         {
+            use std::fs;
             let home_dir = std::env::var("HOME")?;
             let autostart_dir = format!("{}/.config/autostart", home_dir);
             let desktop_file = format!("{}/swingmusic.desktop", autostart_dir);
