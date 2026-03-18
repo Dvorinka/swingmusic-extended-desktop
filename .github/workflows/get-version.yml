@@ -1,0 +1,114 @@
+name: Get Next Version
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+      tag_name: ${{ steps.semver.outputs.tag_name }}
+      is_major: ${{ steps.semver.outputs.is_major }}
+      is_minor: ${{ steps.semver.outputs.is_minor }}
+      is_patch: ${{ steps.semver.outputs.is_patch }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Get full history
+    
+    - name: Get Last Release
+      id: last_release
+      run: |
+        # Get the latest release tag
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+        echo "Latest tag: $LATEST_TAG"
+    
+    - name: Analyze Commits Since Last Release
+      id: commits
+      run: |
+        # Get commits since last release
+        LAST_TAG="${{ steps.last_release.outputs.tag }}"
+        COMMITS=$(git log $LAST_TAG..HEAD --oneline --no-merges)
+        echo "commits<<EOF" >> $GITHUB_OUTPUT
+        echo "$COMMITS" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        # Count different types of changes
+        MAJOR_KEYWORDS="BREAKING CHANGE|major|!:|breaking"
+        MINOR_KEYWORDS="feat|feature|add|new|enhance"
+        PATCH_KEYWORDS="fix|bug|patch|update|improve|refactor|docs|style|test|chore"
+        
+        MAJOR_COUNT=$(echo "$COMMITS" | grep -iE "$MAJOR_KEYWORDS" | wc -l || echo "0")
+        MINOR_COUNT=$(echo "$COMMITS" | grep -iE "$MINOR_KEYWORDS" | wc -l || echo "0")
+        PATCH_COUNT=$(echo "$COMMITS" | grep -iE "$PATCH_KEYWORDS" | wc -l || echo "0")
+        
+        echo "major_count=$MAJOR_COUNT" >> $GITHUB_OUTPUT
+        echo "minor_count=$MINOR_COUNT" >> $GITHUB_OUTPUT
+        echo "patch_count=$PATCH_COUNT" >> $GITHUB_OUTPUT
+        
+        echo "Major changes: $MAJOR_COUNT"
+        echo "Minor changes: $MINOR_COUNT"
+        echo "Patch changes: $PATCH_COUNT"
+    
+    - name: Calculate Next Version
+      id: semver
+      run: |
+        # Parse current version
+        CURRENT_TAG="${{ steps.last_release.outputs.tag }}"
+        CURRENT_VERSION=${CURRENT_TAG#v}  # Remove 'v' prefix
+        
+        # Split into parts
+        IFS='.' read -ra PARTS <<< "$CURRENT_VERSION"
+        MAJOR=${PARTS[0]:-0}
+        MINOR=${PARTS[1]:-0}
+        PATCH=${PARTS[2]:-0}
+        
+        echo "Current version: $MAJOR.$MINOR.$PATCH"
+        
+        # Get commit counts
+        MAJOR_COUNT="${{ steps.commits.outputs.major_count }}"
+        MINOR_COUNT="${{ steps.commits.outputs.minor_count }}"
+        PATCH_COUNT="${{ steps.commits.outputs.patch_count }}"
+        
+        # Determine version bump
+        IS_MAJOR="false"
+        IS_MINOR="false"
+        IS_PATCH="false"
+        
+        if [ "$MAJOR_COUNT" -gt 0 ]; then
+          MAJOR=$((MAJOR + 1))
+          MINOR=0
+          PATCH=0
+          IS_MAJOR="true"
+          echo "Major bump detected!"
+        elif [ "$MINOR_COUNT" -gt 0 ]; then
+          MINOR=$((MINOR + 1))
+          PATCH=0
+          IS_MINOR="true"
+          echo "Minor bump detected!"
+        elif [ "$PATCH_COUNT" -gt 0 ]; then
+          PATCH=$((PATCH + 1))
+          IS_PATCH="true"
+          echo "Patch bump detected!"
+        else
+          PATCH=$((PATCH + 1))
+          IS_PATCH="true"
+          echo "No conventional commits found, defaulting to patch bump"
+        fi
+        
+        NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+        TAG_NAME="v$NEW_VERSION"
+        
+        echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "is_major=$IS_MAJOR" >> $GITHUB_OUTPUT
+        echo "is_minor=$IS_MINOR" >> $GITHUB_OUTPUT
+        echo "is_patch=$IS_PATCH" >> $GITHUB_OUTPUT
+        
+        echo "New version: $NEW_VERSION"
+        echo "Tag name: $TAG_NAME"

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version_number:
-        description: 'Version Number (e.g., 1.0.0)'
+        description: 'Version Number (e.g., 1.2.3) - leave empty for auto'
         required: false
         type: string
         default: ''
@@ -16,9 +16,175 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-and-release:
+  get-version:
+    name: Calculate Version
+    runs-on: ubuntu-latest
+    if: github.event.inputs.version_number == ''
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      is_major: ${{ steps.version.outputs.is_major }}
+      is_minor: ${{ steps.version.outputs.is_minor }}
+      is_patch: ${{ steps.version.outputs.is_patch }}
+      release_notes: ${{ steps.version.outputs.release_notes }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Get Last Release
+      id: last_release
+      run: |
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+        echo "Latest tag: $LATEST_TAG"
+    
+    - name: Analyze Commits Since Last Release
+      id: commits
+      run: |
+        LAST_TAG="${{ steps.last_release.outputs.tag }}"
+        COMMITS=$(git log $LAST_TAG..HEAD --oneline --no-merges)
+        echo "commits<<EOF" >> $GITHUB_OUTPUT
+        echo "$COMMITS" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        MAJOR_KEYWORDS="BREAKING CHANGE|major|!:|breaking"
+        MINOR_KEYWORDS="feat|feature|add|new|enhance"
+        PATCH_KEYWORDS="fix|bug|patch|update|improve|refactor|docs|style|test|chore"
+        
+        MAJOR_COUNT=$(echo "$COMMITS" | grep -iE "$MAJOR_KEYWORDS" | wc -l || echo "0")
+        MINOR_COUNT=$(echo "$COMMITS" | grep -iE "$MINOR_KEYWORDS" | wc -l || echo "0")
+        PATCH_COUNT=$(echo "$COMMITS" | grep -iE "$PATCH_KEYWORDS" | wc -l || echo "0")
+        
+        echo "major_count=$MAJOR_COUNT" >> $GITHUB_OUTPUT
+        echo "minor_count=$MINOR_COUNT" >> $GITHUB_OUTPUT
+        echo "patch_count=$PATCH_COUNT" >> $GITHUB_OUTPUT
+        
+        echo "Major changes: $MAJOR_COUNT"
+        echo "Minor changes: $MINOR_COUNT" 
+        echo "Patch changes: $PATCH_COUNT"
+    
+    - name: Calculate Next Version
+      id: version
+      run: |
+        CURRENT_TAG="${{ steps.last_release.outputs.tag }}"
+        CURRENT_VERSION=${CURRENT_TAG#v}
+        
+        IFS='.' read -ra PARTS <<< "$CURRENT_VERSION"
+        MAJOR=${PARTS[0]:-0}
+        MINOR=${PARTS[1]:-0}
+        PATCH=${PARTS[2]:-0}
+        
+        echo "Current version: $MAJOR.$MINOR.$PATCH"
+        
+        MAJOR_COUNT="${{ steps.commits.outputs.major_count }}"
+        MINOR_COUNT="${{ steps.commits.outputs.minor_count }}"
+        PATCH_COUNT="${{ steps.commits.outputs.patch_count }}"
+        
+        IS_MAJOR="false"
+        IS_MINOR="false" 
+        IS_PATCH="false"
+        BUMP_TYPE="patch"
+        
+        if [ "$MAJOR_COUNT" -gt 0 ]; then
+          MAJOR=$((MAJOR + 1))
+          MINOR=0
+          PATCH=0
+          IS_MAJOR="true"
+          BUMP_TYPE="major"
+        elif [ "$MINOR_COUNT" -gt 0 ]; then
+          MINOR=$((MINOR + 1))
+          PATCH=0
+          IS_MINOR="true"
+          BUMP_TYPE="minor"
+        elif [ "$PATCH_COUNT" -gt 0 ]; then
+          PATCH=$((PATCH + 1))
+          IS_PATCH="true"
+          BUMP_TYPE="patch"
+        else
+          PATCH=$((PATCH + 1))
+          IS_PATCH="true"
+          BUMP_TYPE="patch"
+        fi
+        
+        NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+        TAG_NAME="v$NEW_VERSION"
+        
+        echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "is_major=$IS_MAJOR" >> $GITHUB_OUTPUT
+        echo "is_minor=$IS_MINOR" >> $GITHUB_OUTPUT
+        echo "is_patch=$IS_PATCH" >> $GITHUB_OUTPUT
+        
+        # Generate release notes
+        RELEASE_NOTES="## Changes since $CURRENT_TAG\n\n"
+        
+        if [ "$MAJOR_COUNT" -gt 0 ]; then
+          RELEASE_NOTES+="### 🚨 BREAKING CHANGES\n"
+          echo "$COMMITS" | grep -iE "$MAJOR_KEYWORDS" | while read commit; do
+            RELEASE_NOTES+="- $commit\n"
+          done
+          RELEASE_NOTES+="\n"
+        fi
+        
+        if [ "$MINOR_COUNT" -gt 0 ]; then
+          RELEASE_NOTES+="### ✨ New Features\n"
+          echo "$COMMITS" | grep -iE "$MINOR_KEYWORDS" | while read commit; do
+            RELEASE_NOTES+="- $commit\n"
+          done
+          RELEASE_NOTES+="\n"
+        fi
+        
+        if [ "$PATCH_COUNT" -gt 0 ]; then
+          RELEASE_NOTES+="### 🐛 Bug Fixes & Improvements\n"
+          echo "$COMMITS" | grep -iE "$PATCH_KEYWORDS" | while read commit; do
+            RELEASE_NOTES+="- $commit\n"
+          done
+          RELEASE_NOTES+="\n"
+        fi
+        
+        echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+        echo -e "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "New version: $NEW_VERSION ($BUMP_TYPE)"
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies (ubuntu)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+    
+    - name: Rust setup
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Rust Cache
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: "swingmusic-desktop -> target"
+        
+    - name: Install Tauri CLI
+      run: npm install -g @tauri-apps/cli
+
+    - name: Install desktop dependencies
+      run: |
+        cd swingmusic-desktop
+        npm install
+
+    - name: Run tests
+      run: cd swingmusic-desktop && cargo test
+
+  build:
     name: Build and Release
     runs-on: ${{ matrix.os }}
+    needs: [test, get-version]
     
     strategy:
       fail-fast: false
@@ -90,7 +256,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: build-and-release
+    needs: [build, get-version]
     
     steps:
     - uses: actions/checkout@v4
@@ -116,12 +282,13 @@ jobs:
       run: |
         if [ -n "${{ github.event.inputs.version_number }}" ]; then
           VERSION="${{ github.event.inputs.version_number }}"
+          TAG_NAME="v$VERSION"
         else
-          # Generate version from timestamp and commit
-          VERSION="$(date +%Y.%m.%d)-$(git rev-parse --short HEAD)"
+          VERSION="${{ needs.get-version.outputs.version }}"
+          TAG_NAME="${{ needs.get-version.outputs.tag_name }}"
         fi
         echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -134,6 +301,8 @@ jobs:
         files: release-assets/*
         body: |
           ## 🎵 Swing Music Desktop Application v${{ steps.version.outputs.version }}
+          
+          ${{ github.event.inputs.version_number == '' && needs.get-version.outputs.release_notes || '' }}
           
           ### 📦 Installation
           
