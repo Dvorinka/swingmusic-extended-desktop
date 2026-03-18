@@ -2,9 +2,7 @@ name: Desktop Release
 
 on:
   push:
-    tags: [ 'v*.*.*' ]
-    paths:
-      - 'swingmusic-desktop/**'
+    branches: [ "main" ]
   workflow_dispatch:
     inputs:
       version_number:
@@ -30,6 +28,10 @@ jobs:
             os: ubuntu-latest
             architecture: 'x64'
             rust_target: 'x86_64-unknown-linux-gnu'
+          - platform: 'linux-arm64'
+            os: ubuntu-latest
+            architecture: 'arm64'
+            rust_target: 'aarch64-unknown-linux-gnu'
           - platform: 'win-x64'
             os: windows-latest
             architecture: 'x64'
@@ -38,12 +40,16 @@ jobs:
             os: macos-latest
             architecture: 'x64'
             rust_target: 'x86_64-apple-darwin'
+          - platform: 'darwin-arm64'
+            os: macos-latest
+            architecture: 'arm64'
+            rust_target: 'aarch64-apple-darwin'
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Install dependencies (ubuntu only)
-      if: matrix.platform == 'linux-x64'
+      if: startsWith(matrix.platform, 'linux')
       run: |
         sudo apt-get update
         sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -97,6 +103,7 @@ jobs:
     - name: Prepare release assets
       run: |
         mkdir -p release-assets
+        find artifacts -name "*.exe" -exec cp {} release-assets/ \;
         find artifacts -name "*.msi" -exec cp {} release-assets/ \;
         find artifacts -name "*.dmg" -exec cp {} release-assets/ \;
         find artifacts -name "*.AppImage" -exec cp {} release-assets/ \;
@@ -107,12 +114,11 @@ jobs:
     - name: Extract version
       id: version
       run: |
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          VERSION=${GITHUB_REF#refs/tags/v}
-        elif [ -n "${{ github.event.inputs.version_number }}" ]; then
+        if [ -n "${{ github.event.inputs.version_number }}" ]; then
           VERSION="${{ github.event.inputs.version_number }}"
         else
-          VERSION="latest"
+          # Generate version from timestamp and commit
+          VERSION="$(date +%Y.%m.%d)-$(git rev-parse --short HEAD)"
         fi
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
@@ -131,25 +137,33 @@ jobs:
           
           ### 📦 Installation
           
-          #### Windows
-          - Download the `.msi` installer
+          #### 🪟 Windows
+          - Download the `.exe` installer
           - Run the installer and follow the setup wizard
           
-          #### macOS  
-          - Download the `.dmg` disk image
+          #### 🍎 macOS  
+          - **Intel Mac**: Download the `x64.dmg` disk image
+          - **Apple Silicon**: Download the `arm64.dmg` disk image
           - Open the file and drag Swing Music to Applications
           
-          #### Linux
-          - **AppImage**: Download and make executable: `chmod +x SwingMusic.AppImage`
-          - **DEB/Ubuntu**: Download `.deb` and install: `sudo dpkg -i swingmusic_*.deb`
+          #### 🐧 Linux
+          - **x86_64**: Choose your package:
+            - AppImage: `chmod +x SwingMusic*.AppImage && ./SwingMusic*.AppImage`
+            - Debian/Ubuntu: `sudo dpkg -i SwingMusic*_amd64.deb`
+            - Fedora/RHEL/CentOS: `sudo rpm -i SwingMusic*.x86_64.rpm`
+          - **ARM64**: Choose your package:
+            - Debian/Ubuntu ARM: `sudo dpkg -i SwingMusic*_arm64.deb`
+            - Fedora/RHEL/CentOS ARM: `sudo rpm -i SwingMusic*.aarch64.rpm`
           
           ### ✨ What's New
-          - Cross-platform desktop application
+          - Cross-platform desktop application (5 platforms!)
           - Native performance and integration
           - Spotify URL downloader integration
           - Local library management
           - Modern, responsive UI
           - Auto-updates (Windows/macOS)
+          - System notifications
+          - Auto-start option
           
           ### 🔧 System Requirements
           - **Windows**: Windows 10 or later
