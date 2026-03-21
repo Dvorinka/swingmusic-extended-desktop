@@ -5,7 +5,10 @@ use std::process::Command;
 pub struct NativeFeatures;
 
 impl NativeFeatures {
-    pub fn show_download_notification(title: &str, body: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn show_download_notification(
+        title: &str,
+        body: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(target_os = "windows")]
         {
             // Use PowerShell for notifications on Windows
@@ -18,15 +21,15 @@ impl NativeFeatures {
                 ))
                 .output()?;
         }
-        
+
         #[cfg(target_os = "macos")]
         {
-            use std::fs;
             use std::ffi::CString;
-            
+            use std::fs;
+
             let title_c = CString::new(title)?;
             let body_c = CString::new(body)?;
-            
+
             unsafe {
                 // macOS notification implementation
                 let _result = Command::new("osascript")
@@ -39,21 +42,18 @@ impl NativeFeatures {
                     .output()?;
             }
         }
-        
+
         #[cfg(target_os = "linux")]
         {
-            let _result = Command::new("notify-send")
-                .arg(title)
-                .arg(body)
-                .output()?;
+            let _result = Command::new("notify-send").arg(title).arg(body).output()?;
         }
-        
+
         Ok(())
     }
-    
+
     pub fn open_file_location(file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let path = Path::new(file_path);
-        
+
         #[cfg(target_os = "windows")]
         {
             let _result = Command::new("explorer")
@@ -61,7 +61,7 @@ impl NativeFeatures {
                 .arg(path.canonicalize()?)
                 .output()?;
         }
-        
+
         #[cfg(target_os = "macos")]
         {
             let _result = Command::new("open")
@@ -69,24 +69,24 @@ impl NativeFeatures {
                 .arg(path.canonicalize()?)
                 .output()?;
         }
-        
+
         #[cfg(target_os = "linux")]
         {
             let _result = Command::new("xdg-open")
                 .arg(path.parent().unwrap_or(path))
                 .output()?;
         }
-        
+
         Ok(())
     }
-    
+
     pub fn set_auto_start(enabled: bool) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(target_os = "windows")]
         {
             // Use PowerShell for auto-start on Windows
             let exe_path = std::env::current_exe()?;
             let app_name = "SwingMusic";
-            
+
             if enabled {
                 let _result = Command::new("powershell")
                     .arg("-Command")
@@ -106,14 +106,14 @@ impl NativeFeatures {
                     .output()?;
             }
         }
-        
+
         #[cfg(target_os = "macos")]
         {
             use std::fs;
             let home_dir = std::env::var("HOME")?;
             let launch_agents_dir = format!("{}/Library/LaunchAgents", home_dir);
             let plist_file = format!("{}/com.swingmusic.plist", launch_agents_dir);
-            
+
             if enabled {
                 fs::create_dir_all(&launch_agents_dir)?;
                 let plist_content = format!(
@@ -134,20 +134,20 @@ impl NativeFeatures {
 "#,
                     std::env::current_exe()?.to_string_lossy()
                 );
-                
+
                 fs::write(&plist_file, plist_content)?;
             } else {
                 fs::remove_file(plist_file)?;
             }
         }
-        
+
         #[cfg(target_os = "linux")]
         {
             use std::fs;
             let home_dir = std::env::var("HOME")?;
             let autostart_dir = format!("{}/.config/autostart", home_dir);
             let desktop_file = format!("{}/swingmusic.desktop", autostart_dir);
-            
+
             if enabled {
                 fs::create_dir_all(&autostart_dir)?;
                 let desktop_content = format!(
@@ -162,13 +162,13 @@ X-GNOME-Autostart-enabled=true
 "#,
                     std::env::current_exe()?.to_string_lossy()
                 );
-                
+
                 fs::write(&desktop_file, desktop_content)?;
             } else {
                 fs::remove_file(desktop_file)?;
             }
         }
-        
+
         Ok(())
     }
 }

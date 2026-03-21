@@ -60,12 +60,6 @@
               <Download /> Quick Download
             </button>
           </div>
-          
-          <div class="quick-action-card">
-            <button @click="openSettings" class="quick-action secondary">
-              <Settings /> Settings
-            </button>
-          </div>
         </div>
       </div>
       
@@ -195,8 +189,7 @@ const playbackProgress = ref(0)
 const volume = ref(75)
 const unreadNotifications = ref(0)
 const isWebAppConnected = ref(false)
-const webAppUrl = ref('http://localhost:6081')
-const pairingCode = ref('')
+const webAppUrl = ref('http://localhost:1970')
 const showConnectionModal = ref(false)
 
 // Computed properties
@@ -205,7 +198,8 @@ const currentPageTitle = computed(() => {
     home: 'Home',
     library: 'Your Library',
     downloads: 'Downloads',
-    search: 'Search'
+    search: 'Search',
+    settings: 'Settings'
   }
   return titles[currentRoute.value] || 'SwingMusic'
 })
@@ -215,7 +209,8 @@ const currentPageComponent = computed(() => {
     home: 'HomeView',
     library: 'LibraryView',
     downloads: 'DownloadsView',
-    search: 'SearchView'
+    search: 'SearchView',
+    settings: 'SettingsView'
   }
   return components[currentRoute.value] || 'HomeView'
 })
@@ -224,7 +219,8 @@ const navigationItems = ref([
   { id: 'home', name: 'Home', icon: 'Home', route: 'home' },
   { id: 'search', name: 'Search', icon: 'Search', route: 'search' },
   { id: 'library', name: 'Your Library', icon: 'Music', route: 'library' },
-  { id: 'downloads', name: 'Downloads', icon: 'Download', route: 'downloads' }
+  { id: 'downloads', name: 'Downloads', icon: 'Download', route: 'downloads' },
+  { id: 'settings', name: 'Settings', icon: 'Settings', route: 'settings' }
 ])
 
 // Window controls
@@ -344,64 +340,6 @@ const openUniversalDownloader = () => {
 }
 
 const openWebAppConnection = () => {
-  // Open web app connection modal/dialog
-  if (isWebAppConnected.value) {
-    disconnectFromWebApp()
-  } else {
-    connectToWebApp()
-  }
-}
-
-const connectToWebApp = async () => {
-  try {
-    // Generate pairing code
-    pairingCode.value = generatePairingCode()
-    
-    // Show connection dialog with pairing code
-    showConnectionDialog()
-    
-    // Attempt connection to web app
-    const connected = await invoke('connect_to_web_app', { 
-      url: webAppUrl.value,
-      pairingCode: pairingCode.value 
-    })
-    
-    if (connected) {
-      isWebAppConnected.value = true
-      await invoke('show_notification', {
-        title: 'Connected to Web App',
-        body: `Successfully connected to ${webAppUrl.value}`
-      })
-    }
-  } catch (error) {
-    console.error('Failed to connect to web app:', error)
-    await invoke('show_notification', {
-      title: 'Connection Failed',
-      body: 'Could not connect to web app. Please check the URL and try again.'
-    })
-  }
-}
-
-const disconnectFromWebApp = async () => {
-  try {
-    await invoke('disconnect_from_web_app')
-    isWebAppConnected.value = false
-    pairingCode.value = ''
-    
-    await invoke('show_notification', {
-      title: 'Disconnected',
-      body: 'Disconnected from web app'
-    })
-  } catch (error) {
-    console.error('Failed to disconnect from web app:', error)
-  }
-}
-
-const generatePairingCode = () => {
-  return Math.random().toString(36).substring(2, 8).toUpperCase()
-}
-
-const showConnectionDialog = () => {
   showConnectionModal.value = true
 }
 
@@ -411,6 +349,7 @@ const closeConnectionModal = () => {
 
 const handleConnectionChange = (connected: boolean) => {
   isWebAppConnected.value = connected
+  showConnectionModal.value = false
 }
 
 const openSettings = () => {

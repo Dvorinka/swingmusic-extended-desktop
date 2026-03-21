@@ -262,8 +262,28 @@ npm run tauri dev     # Alternative dev command
 ```
 
 ### Building
+
+**⚠️ IMPORTANT: Build Order**
+
+The desktop app requires the web client to be built first. The build process is:
+
 ```bash
-npm run build         # Build for production
+# Step 1: Build the web client (required before Tauri build)
+cd ../swingmusic-webclient
+npm install
+npm run build
+
+# Step 2: Build the desktop app
+cd ../swingmusic-desktop
+npm install
+npm run build
+```
+
+The `tauri.conf.json` is configured to automatically build the web client via `beforeBuildCommand`, but ensure dependencies are installed first.
+
+### Build Commands
+```bash
+npm run build         # Build for production (runs web build first)
 npm run build:debug   # Build with debug symbols
 npm run build:release # Build optimized release
 ```
@@ -303,6 +323,78 @@ npm run test:e2e
 
 ## 📦 Distribution
 
+### Code Signing (REQUIRED for Production)
+
+**⚠️ Without code signing, users will receive security warnings on Windows and macOS.**
+
+#### Windows Code Signing
+
+1. **Obtain a Code Signing Certificate**:
+   - EV Certificate (recommended): Provides immediate trust, requires hardware token
+   - Standard Certificate: Provides trust after reputation is built
+   - Providers: DigiCert, Sectigo, GlobalSign
+
+2. **Configure in `tauri.conf.json`**:
+   ```json
+   "windows": {
+     "certificateThumbprint": "YOUR_CERTIFICATE_THUMBPRINT",
+     "digestAlgorithm": "sha256",
+     "timestampUrl": "http://timestamp.digicert.com"
+   }
+   ```
+
+3. **Build signed Windows installer**:
+   ```bash
+   # Certificate must be installed in Windows Certificate Store
+   npm run build:windows
+   ```
+
+#### macOS Code Signing
+
+1. **Obtain Apple Developer Certificate**:
+   - Enroll in Apple Developer Program ($99/year)
+   - Create "Developer ID Application" certificate in Xcode
+
+2. **Configure in `tauri.conf.json`**:
+   ```json
+   "macOS": {
+     "signingIdentity": "Developer ID Application: Your Name (TEAM_ID)",
+     "providerShortName": "TEAM_ID",
+     "entitlements": "entitlements.plist"
+   }
+   ```
+
+3. **Create entitlements.plist** (for audio/network access):
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+       <key>com.apple.security.network.client</key>
+       <true/>
+       <key>com.apple.security.network.server</key>
+       <true/>
+       <key>com.apple.security.files.user-selected.read-write</key>
+       <true/>
+   </dict>
+   </plist>
+   ```
+
+4. **Build signed macOS app**:
+   ```bash
+   # Requires Xcode and valid certificate
+   npm run build:macos
+   ```
+
+5. **Notarize (required for distribution outside App Store)**:
+   ```bash
+   xcrun notarytool submit target/release/bundle/macos/SwingMusic.app \
+     --apple-id "your@email.com" \
+     --password "app-specific-password" \
+     --team-id "TEAM_ID" \
+     --wait
+   ```
+
 ### Build Packages
 ```bash
 # Build for all platforms
@@ -315,11 +407,60 @@ npm run build:linux
 ```
 
 ### Release Process
-1. Update version in `package.json`
+1. Update version in `package.json` and `Cargo.toml`
 2. Update changelog
-3. Build release packages
+3. Build signed release packages (see Code Signing section)
 4. Test on all platforms
-5. Create GitHub release
+5. Create GitHub release with binaries
+6. Update endpoint URL in `tauri.conf.json` for auto-updates
+
+### Auto-Updates
+
+The desktop app includes built-in auto-update functionality:
+
+- **Update Endpoint**: Configured in `tauri.conf.json` under `plugins.updater.endpoints`
+- **Update Check**: Automatic on startup, manual via Settings
+- **Installation**: Downloads and installs in background, prompts to restart
+
+To enable auto-updates for your releases:
+
+1. **Generate signing key** (for update verification):
+   ```bash
+   npm run tauri signer generate
+   ```
+
+2. **Add public key to `tauri.conf.json`**:
+   ```json
+   "updater": {
+     "pubkey": "YOUR_PUBLIC_KEY_HERE"
+   }
+   ```
+
+3. **Sign your releases**:
+   ```bash
+   # Set private key as environment variable
+   export TAURI_SIGNING_PRIVATE_KEY="your-private-key"
+   npm run build
+   ```
+
+4. **Host update manifest** at your endpoint URL with format:
+   ```json
+   {
+     "version": "1.0.1",
+     "notes": "Bug fixes and improvements",
+     "pub_date": "2024-01-15T12:00:00Z",
+     "platforms": {
+       "darwin-x86_64": {
+         "signature": "base64-signature",
+         "url": "https://github.com/.../SwingMusic_1.0.1_x64.app.tar.gz"
+       },
+       "windows-x86_64": {
+         "signature": "base64-signature",
+         "url": "https://github.com/.../SwingMusic_1.0.1_x64-setup.exe"
+       }
+     }
+   }
+   ```
 
 ## 📄 License
 

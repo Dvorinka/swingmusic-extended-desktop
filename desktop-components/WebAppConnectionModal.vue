@@ -26,20 +26,62 @@
             <input 
               v-model="localWebAppUrl" 
               type="url" 
-              placeholder="http://localhost:6081"
+              placeholder="http://localhost:1970"
               class="url-input"
             />
           </div>
-          
-          <div class="pairing-section">
-            <h4>Pairing Code</h4>
-            <div class="pairing-code-display" v-if="pairingCode">
-              <div class="code-box">{{ pairingCode }}</div>
-              <p class="code-instruction">Enter this code in the web app's connection settings</p>
-            </div>
-            <button @click="generateNewCode" class="generate-code-btn">
-              <RefreshCw /> Generate Code
+
+          <div class="auth-mode">
+            <button
+              class="mode-btn"
+              :class="{ active: authMode === 'pair' }"
+              @click="authMode = 'pair'"
+            >
+              Pair Code
             </button>
+            <button
+              class="mode-btn"
+              :class="{ active: authMode === 'manual' }"
+              @click="authMode = 'manual'"
+            >
+              Username & Password
+            </button>
+          </div>
+          
+          <div class="pairing-section" v-if="authMode === 'pair'">
+            <h4>Pairing Code</h4>
+            <input
+              v-model="pairingCode"
+              type="text"
+              placeholder="Enter code from web UI pairing screen"
+              class="url-input"
+              autocomplete="off"
+              autocapitalize="characters"
+            />
+            <p class="code-instruction">
+              Generate this code in the web app settings and paste it here.
+            </p>
+          </div>
+
+          <div class="pairing-section" v-else>
+            <h4>Account Login</h4>
+            <input
+              v-model="username"
+              type="text"
+              placeholder="Username"
+              class="url-input"
+              autocomplete="username"
+            />
+            <input
+              v-model="password"
+              type="password"
+              placeholder="Password"
+              class="url-input"
+              autocomplete="current-password"
+            />
+            <p class="code-instruction">
+              Use this when QR pairing is not available.
+            </p>
           </div>
           
           <div class="connection-benefits">
@@ -52,6 +94,7 @@
               <li><CheckCircle /> Download tracks for offline listening</li>
             </ul>
           </div>
+          <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
         </div>
         
         <div v-else class="connected-actions">
@@ -68,7 +111,12 @@
       </div>
       
       <div class="modal-footer">
-        <button v-if="!isConnected" @click="connect" class="connect-btn primary" :disabled="!pairingCode || isConnecting">
+        <button
+          v-if="!isConnected"
+          @click="connect"
+          class="connect-btn primary"
+          :disabled="!canConnect || isConnecting"
+        >
           <Loader v-if="isConnecting" />
           <Cloud v-else />
           {{ isConnecting ? 'Connecting...' : 'Connect' }}
@@ -104,8 +152,20 @@ const emit = defineEmits<Emits>()
 
 const localWebAppUrl = ref(props.webAppUrl)
 const pairingCode = ref('')
+const username = ref('')
+const password = ref('')
+const authMode = ref<'pair' | 'manual'>('pair')
 const isConnecting = ref(false)
 const syncItems = ref<string[]>([])
+const errorMessage = ref('')
+
+const canConnect = computed(() => {
+  if (!localWebAppUrl.value.trim()) return false
+  if (authMode.value === 'pair') {
+    return pairingCode.value.trim().length > 0
+  }
+  return username.value.trim().length > 0 && password.value.length > 0
+})
 
 // Watch for prop changes
 watch(() => props.webAppUrl, (newUrl) => {
@@ -118,22 +178,21 @@ watch(() => props.isConnected, (connected) => {
   }
 })
 
-const generateNewCode = async () => {
-  try {
-    pairingCode.value = await invoke('generate_pairing_code')
-  } catch (error) {
-    console.error('Failed to generate pairing code:', error)
-  }
-}
-
 const connect = async () => {
-  if (!pairingCode.value) return
+  if (!localWebAppUrl.value.trim()) return
+  if (authMode.value === 'pair' && !pairingCode.value.trim()) return
+  if (authMode.value === 'manual' && (!username.value.trim() || !password.value)) return
   
   isConnecting.value = true
+  errorMessage.value = ''
   try {
-    const connected = await invoke('connect_to_web_app', {
-      url: localWebAppUrl.value,
-      pairingCode: pairingCode.value
+    const connected = await invoke<boolean>('connect_to_web_app', {
+      request: {
+        url: localWebAppUrl.value.trim(),
+        pairingCode: authMode.value === 'pair' ? pairingCode.value.trim().toUpperCase() : '',
+        username: authMode.value === 'manual' ? username.value.trim() : null,
+        password: authMode.value === 'manual' ? password.value : null,
+      },
     })
     
     if (connected) {
@@ -141,7 +200,7 @@ const connect = async () => {
       await loadSyncStatus()
     }
   } catch (error) {
-    console.error('Connection failed:', error)
+    errorMessage.value = String(error)
   } finally {
     isConnecting.value = false
   }
@@ -152,6 +211,9 @@ const disconnect = async () => {
     await invoke('disconnect_from_web_app')
     emit('connection-changed', false)
     pairingCode.value = ''
+    username.value = ''
+    password.value = ''
+    errorMessage.value = ''
   } catch (error) {
     console.error('Disconnect failed:', error)
   }
@@ -262,6 +324,26 @@ const closeModal = () => {
   margin-bottom: 20px;
 }
 
+.auth-mode {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.mode-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--on-surface-variant);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.mode-btn.active {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 .form-group label {
   display: block;
   margin-bottom: 8px;
@@ -276,6 +358,10 @@ const closeModal = () => {
   background: var(--surface);
   color: var(--on-surface);
   font-size: 1rem;
+}
+
+.pairing-section .url-input + .url-input {
+  margin-top: 8px;
 }
 
 .pairing-section {
@@ -309,6 +395,12 @@ const closeModal = () => {
   margin: 0;
   font-size: 0.9rem;
   opacity: 0.7;
+}
+
+.error-text {
+  margin-top: 12px;
+  color: #f7635c;
+  font-size: 0.9rem;
 }
 
 .generate-code-btn {
