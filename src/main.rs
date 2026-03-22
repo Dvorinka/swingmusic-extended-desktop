@@ -1135,8 +1135,8 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, 
         Ok(Some(update)) => {
             Ok(Some(UpdateInfo {
                 version: update.version,
-                notes: update.notes,
-                pub_date: update.pub_date,
+                notes: update.body,
+                pub_date: update.date.map(|d| d.to_string()),
                 install_available: true,
             }))
         }

@@ -25,14 +25,12 @@ impl NativeFeatures {
         #[cfg(target_os = "macos")]
         {
             use std::ffi::CString;
-            use std::fs;
 
             let title_c = CString::new(title)?;
             let body_c = CString::new(body)?;
 
-            unsafe {
-                // macOS notification implementation
-                let _result = Command::new("osascript")
+            // macOS notification implementation
+            let _result = Command::new("osascript")
                     .arg("-e")
                     .arg(format!(
                         "display notification \"{}\" with title \"{}\"",
@@ -40,7 +38,6 @@ impl NativeFeatures {
                         title_c.to_str().unwrap_or(title)
                     ))
                     .output()?;
-            }
         }
 
         #[cfg(target_os = "linux")]
